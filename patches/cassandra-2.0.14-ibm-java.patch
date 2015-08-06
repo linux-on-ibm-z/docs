@@ -1,0 +1,76 @@
+--- apache-cassandra-2.0.14-src/src/java/org/apache/cassandra/utils/ObjectSizes.java	2015-03-30 10:18:57.000000000 -0400
++++ apache-cassandra-2.0.14-src-modified/src/java/org/apache/cassandra/utils/ObjectSizes.java	2015-08-01 06:23:21.817502754 -0400
+@@ -84,6 +84,19 @@
+      */
+     public static long getArraySize(int length, long elementSize)
+     {
++        final String javaVendor = System.getProperty("java.vendor");
++
++        if (javaVendor.startsWith("IBM")) {
++            final String vmInfo = System.getProperty("java.vm.info");
++            final boolean compressedRefs = vmInfo.contains("Compressed References") || vmInfo.contains("CMPRSS");
++            final int bitMode = Integer.parseInt(System.getProperty("com.ibm.vm.bitmode"));
++            final double jvmVersion = Double.parseDouble(System.getProperty("java.vm.version"));
++            
++            if (jvmVersion >= 2.6 && length == 0 && (bitMode != 64 || compressedRefs))
++                length = 1;
++            
++        }
++
+         return roundTo(SPEC.getArrayHeaderSize() + length * elementSize, SPEC.getObjectPadding());
+     }
+ 
+@@ -134,6 +147,53 @@
+ 
+     private static MemoryLayoutSpecification getEffectiveMemoryLayoutSpecification()
+     {
++        final String javaVendor = System.getProperty("java.vendor");
++
++        if (javaVendor.startsWith("IBM"))
++        {
++            final String vmInfo = System.getProperty("java.vm.info");
++            final boolean compressedRefs = vmInfo.contains("Compressed References") || vmInfo.contains("CMPRSS") ;
++            final int bitMode = Integer.parseInt(System.getProperty("com.ibm.vm.bitmode"));
++            final double jvmVersion = Double.parseDouble(System.getProperty("java.vm.version"));
++                    
++            return new MemoryLayoutSpecification()
++            {
++                public int getArrayHeaderSize()
++                {
++                    if (bitMode != 64 || compressedRefs) 
++                        return jvmVersion < 2.6 ? 16 : 8;
++                    else
++                        return jvmVersion < 2.6 ? 24 : 16;
++                }
++
++                public int getObjectHeaderSize()
++                {
++                    if (bitMode != 64 || compressedRefs) 
++                        return jvmVersion < 2.6 ? 12 : 8;
++                    else
++                        return jvmVersion < 2.6 ? 24 : 16;
++                }
++
++                public int getObjectPadding()
++                {
++                    return 8;
++                }
++
++                public int getReferenceSize()
++                {
++                    if (bitMode != 64 || compressedRefs) 
++                        return 4;
++                    else
++                        return 8;
++                }
++
++                public int getSuperclassFieldPadding()
++                {
++                    return bitMode != 64 ? 4 : 8;
++                }
++            };
++        }
++
+         final String dataModel = System.getProperty("sun.arch.data.model");
+         if ("32".equals(dataModel))
+         {
